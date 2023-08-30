@@ -1,16 +1,22 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import tkinter as tk
+from pydub import AudioSegment
 from dotenv import load_dotenv
+from pytube import YouTube
+from pydub import AudioSegment
+from pydub.playback import play
+
 import os
-import webbrowser
 import requests
 import re
+import pygame
 
 load_dotenv()
+pygame.mixer.init()
 
 def play_video(song,artist):
-        query = f"{song} {artist}"
+        query = f"{song} {artist} official audio"
         query=query.replace(" ","+")
         search_url = f"https://www.youtube.com/results?search_query={query}"
         response = requests.get(search_url)
@@ -19,8 +25,21 @@ def play_video(song,artist):
             video_id = re.search(r'\/watch\?v=(.{11})', response.text)
         
             if video_id:
-                video_url = f"https://www.youtube.com/watch?v={video_id.group(1)}"
-                webbrowser.open(video_url)
+                mp3_audio_path=f'audio/{song}_{artist}.mp3'
+                if os.path.exists(mp3_audio_path):
+                    pygame.mixer.music.load(mp3_audio_path)
+                    pygame.mixer.music.play()
+                else:
+                    video_url = f"https://www.youtube.com/watch?v={video_id.group(1)}"
+                    video = YouTube(video_url)
+                    audio_stream = video.streams.filter(only_audio=True, file_extension='webm').order_by('abr').desc().first()
+                    audio_stream.download(output_path='audio', filename=f'{song}_{artist}.webm')
+                    webm_audio_path = f'audio/{song}_{artist}.webm'
+                    webm_audio=AudioSegment.from_file(webm_audio_path, format="webm")
+                    webm_audio.export(mp3_audio_path, format="mp3")
+                    pygame.mixer.music.load(mp3_audio_path)
+                    pygame.mixer.music.play()
+                    os.remove(webm_audio_path)                
             else:
                 result_text.insert(tk.END, f"No video found for {query}\n")
         else:
