@@ -1,50 +1,56 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import tkinter as tk
-from pydub import AudioSegment
+from tkinter import ttk
 from dotenv import load_dotenv
-from pytube import YouTube
-from pydub import AudioSegment
-from pydub.playback import play
+
+from spotiflyDownload import download_audio
 
 import os
-import requests
-import re
 import pygame
 
 load_dotenv()
 pygame.mixer.init()
 
-def play_video(song,artist):
-        query = f"{song} {artist} official audio"
-        query=query.replace(" ","+")
-        search_url = f"https://www.youtube.com/results?search_query={query}"
-        response = requests.get(search_url)
 
-        if response.status_code == 200:
-            video_id = re.search(r'\/watch\?v=(.{11})', response.text)
-        
-            if video_id:
-                mp3_audio_path=f'audio/{song}_{artist}.mp3'
-                if os.path.exists(mp3_audio_path):
-                    pygame.mixer.music.load(mp3_audio_path)
-                    pygame.mixer.music.play()
-                else:
-                    video_url = f"https://www.youtube.com/watch?v={video_id.group(1)}"
-                    video = YouTube(video_url)
-                    audio_stream = video.streams.filter(only_audio=True, file_extension='webm').order_by('abr').desc().first()
-                    audio_stream.download(output_path='audio', filename=f'{song}_{artist}.webm')
-                    webm_audio_path = f'audio/{song}_{artist}.webm'
-                    webm_audio=AudioSegment.from_file(webm_audio_path, format="webm")
-                    webm_audio.export(mp3_audio_path, format="mp3")
-                    pygame.mixer.music.load(mp3_audio_path)
-                    pygame.mixer.music.play()
-                    os.remove(webm_audio_path)                
-            else:
-                result_text.insert(tk.END, f"No video found for {query}\n")
-        else:
-            result_text.insert(tk.END, "Error searching on YouTube\n")
+#   CHECKING IF THE AUDIO FOLDER HAS THE SEARCHED FILE
+def check_file(song, artist):
+    mp3_audio_path = f'audio/{song}_{artist}.mp3'    
+    if os.path.exists(mp3_audio_path):
+        play_audio(mp3_audio_path)
+    else:
+        download_audio(song, artist)
+        play_audio(mp3_audio_path)
+# Function to play the selected song
+def play_selected(song, artist):
+    mp3_audio_path = f'audio/{song}_{artist}.mp3'
+    play_audio(mp3_audio_path)
 
+# Function to pause the playback
+def pause_playback():
+    pygame.mixer.music.pause()
+
+# Function to resume playback
+def resume_playback():
+    pygame.mixer.music.unpause()
+
+# Function to stop the playback
+def stop_playback():
+    pygame.mixer.music.stop()
+#   PLAY THE SEARCHED FILE
+def play_audio(mp3_audio_path):
+    pygame.mixer.init()
+    pygame.mixer.music.load(mp3_audio_path)
+    pygame.mixer.music.play()
+
+def select_song(event, song, artist):
+    selected_song.set(song)
+    selected_artist.set(artist)
+    check_file(song, artist)
+
+
+
+#   GET PLAYLIST INFO FROM YOUR SPOTIFY ACCOUNT
 def get_playlist_info():
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.getenv("SPOTIPY_CLIENT_ID"), client_secret=os.getenv("SPOTIPY_CLIENT_SECRET"), redirect_uri='http://localhost:3000', scope='playlist-read-private'))
 
@@ -57,7 +63,7 @@ def get_playlist_info():
 
         for song, artist in songs_and_artists:
             label = tk.Label(result_text, text=f"Play: {song} - {artist}")
-            label.bind("<Button-1>", lambda event, s=song, a=artist: play_video(s, a))
+            label.bind("<Button-1>", lambda event, s=song, a=artist: select_song(event,s, a))
             label.pack()
             result_text.insert(tk.END, "\n" * len(songs_and_artists))
 
@@ -69,5 +75,27 @@ get_button.pack()
 
 result_text= tk.Text(root, wrap=tk.WORD, width=50, height=50)
 result_text.pack()
+
+#PROGRESS BAR FOR THE SONG
+progress_bar=ttk.Progressbar(root, orient="horizontal",length=400, mode="determinate")
+progress_bar.pack()
+
+# Create a frame for the player controls
+player_frame = tk.Frame(root)
+player_frame.pack()
+
+# Add play, pause, and stop buttons to the player frame
+play_button = tk.Button(player_frame, text="Play", command=lambda: play_selected(selected_song.get(), selected_artist.get()))
+pause_button = tk.Button(player_frame, text="Pause", command=pause_playback)
+resume_button = tk.Button(player_frame, text="Resume", command=resume_playback)
+stop_button = tk.Button(player_frame, text="Stop", command=stop_playback)
+
+play_button.pack(side=tk.LEFT)
+pause_button.pack(side=tk.LEFT)
+resume_button.pack(side=tk.LEFT)
+stop_button.pack(side=tk.LEFT)
+
+selected_song = tk.StringVar()
+selected_artist = tk.StringVar()
 
 root.mainloop()
