@@ -1,13 +1,14 @@
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import tkinter as tk
+import os
+import pygame
+from spotipy.oauth2 import SpotifyOAuth
+from mutagen.mp3 import MP3
 from tkinter import ttk
 from dotenv import load_dotenv
 
 from spotiflyDownload import download_audio
 
-import os
-import pygame
 
 load_dotenv()
 pygame.mixer.init()
@@ -24,16 +25,23 @@ def save_playlist():
     print("saved!")
 
 #   CHECKING IF THE AUDIO FOLDER HAS THE SEARCHED FILE
-def check_file(song, artist, duration_ms):
+def check_file(song, artist):
+    global song_duration
     mp3_audio_path = f'audio/{song}_{artist}.mp3'    
     if os.path.exists(mp3_audio_path):
+        song_duration= int(MP3(mp3_audio_path).info.length)
+        progress_bar["value"] = 0
+        progress_bar["maximum"] = song_duration
         play_audio(mp3_audio_path)
         
     else:
         download_audio(song, artist)
+        song_duration= int(MP3(mp3_audio_path).info.length)
+        progress_bar["value"] = 0
+        progress_bar["maximum"] = song_duration
         play_audio(mp3_audio_path)
         
-# Function to play the selected song
+# Play button
 def play_selected(song, artist):
     global progress_update_active, paused
     mp3_audio_path = f'audio/{song}_{artist}.mp3'
@@ -42,21 +50,25 @@ def play_selected(song, artist):
     else:
        play_audio(mp3_audio_path)
 
-# Function to pause the playback
+# Pause button
 def pause_playback():
-    global paused
+    global paused, progress_update_active
+    progress_update_active=False
+    print("ON PAUSE")
     paused=True
     pygame.mixer.music.pause()
 
-# Function to resume playback
+# Resume button (play button when song is paused)
 def resume_playback():
     global paused, progress_update_active
-    paused = False
-    pygame.mixer.music.unpause()
-    progress_update_active = True  # Set progress_update_active back to True
-    update_progress()
+    print("resume function")
+    if paused:
+        paused = False
+        pygame.mixer.music.unpause()
+        progress_update_active = True  # Set progress_update_active back to True
+        update_progress()
     
-# Function to stop the playback
+# stop button
 def stop_playback():
     global progress_update_active
     pygame.mixer.music.stop()
@@ -73,37 +85,54 @@ def play_audio(mp3_audio_path):
     pygame.mixer.music.play()
     if update_progress_id is not None:
         root.after_cancel(update_progress_id)
-    
     # Schedule the update_progress() function to start updating the progress bar
     update_progress_id = root.after(1000, update_progress)
 
-def select_song(event, song, artist,duration_ms, songs_and_artists):
+# FUNCTION AFTER CLICKING SONG IN THE PLAYLIST
+def select_song(event, song, artist, songs_and_artists):
     global current_song_index, song_duration, progress_update_active
     progress_update_active = False
-    current_song_index = songs_and_artists.index((song, artist, duration_ms))
+    current_song_index = songs_and_artists.index((song, artist))
     selected_song.set(song)
     selected_artist.set(artist)
-    song_duration=duration_ms//1000
-    check_file(song, artist,  duration_ms)
+    check_file(song, artist)
 
+# CALLED WHEN SONG ENDS OR "NEXT" BUTTON IS PRESSED
 def play_next_song():
     global current_song_index, progress_update_active, song_duration
-    progress_update_active = False
     if current_song_index < len(songs_and_artists) - 1:
+        progress_update_active = False
         current_song_index += 1
-        song, artist, duration_ms = songs_and_artists[current_song_index]
+        song, artist = songs_and_artists[current_song_index]
         mp3_audio_path = f'audio/{song}_{artist}.mp3'
         if not os.path.exists(mp3_audio_path):
             download_audio(song, artist)    
-        song_duration=duration_ms//1000
+        song_duration= int(MP3(mp3_audio_path).info.length)
         print("song_duration in play_next_song: ",song_duration)
         progress_bar["value"] = 0
         progress_bar["maximum"] = song_duration
+        selected_song.set(song)  
+        selected_artist.set(artist) 
         play_audio(mp3_audio_path)      
-    else:
-        
-        print("End of playlist")
-
+   
+# CALLED WHEN "PREVIOUS" BUTTON IS PRESSED
+def play_previous_song():
+    global current_song_index, progress_update_active, song_duration
+    if current_song_index > 0:
+        progress_update_active = False
+        current_song_index -= 1
+        song, artist = songs_and_artists[current_song_index]
+        mp3_audio_path = f'audio/{song}_{artist}.mp3'
+        if not os.path.exists(mp3_audio_path):
+            download_audio(song, artist)
+        song_duration = int(MP3(mp3_audio_path).info.length)
+        progress_bar["value"] = 0
+        progress_bar["maximum"] = song_duration
+        selected_song.set(song)  
+        selected_artist.set(artist) 
+        play_audio(mp3_audio_path)
+   
+# FUNCTION TO UPDATE THE PROGRESS BAR
 def update_progress():
     global paused, progress_update_active, song_duration, update_progress_id, last_current_times
     if progress_update_active and not paused:
@@ -125,6 +154,7 @@ def update_progress():
             update_progress_id = root.after(1000, update_progress)
     else:
         update_progress_id = None
+        print("upodate_progress end")
 
 #   GET PLAYLIST INFO FROM YOUR SPOTIFY ACCOUNT
 def get_playlist_info():
@@ -134,19 +164,19 @@ def get_playlist_info():
         playlist_id = os.getenv("PLAYLISTURL")
         playlist = sp.playlist_tracks(playlist_id)
 
-        songs_and_artists = [(track['track']['name'], track['track']['artists'][0]['name'], track['track']['duration_ms']) for track in playlist['items']]
+        songs_and_artists = [(track['track']['name'], track['track']['artists'][0]['name']) for track in playlist['items']]
 
         result_text.delete(1.0, tk.END)
 
-        for song, artist, duration_ms in songs_and_artists:
+        for song, artist in songs_and_artists:
             label = tk.Label(result_text, text=f"Play: {song} - {artist}")
-            label.bind("<Button-1>", lambda event, s=song, a=artist, d=duration_ms, sa=songs_and_artists: select_song(event,s,a,d,sa))
+            label.bind("<Button-1>", lambda event, s=song, a=artist, sa=songs_and_artists: select_song(event,s,a,sa))
             label.pack()
             result_text.insert(tk.END, "\n" * len(songs_and_artists))
         save_playlist_button=tk.Button(root, text="Save This Playlist", command=save_playlist)
         save_playlist_button()
         
-
+# GUI SETTINGS DOWN BELOW
 root = tk.Tk()
 root.title("Spotifly Playlist")
 
@@ -171,22 +201,25 @@ progress_bar.pack(side=tk.LEFT)
 progress_value_label = tk.Label(progress_frame, text="0:00 / 0:00")
 progress_value_label.pack(side=tk.LEFT)
 
-# Create a frame for the player controls
+# FRAME FOR PLAYER CONTROLS
 player_frame = tk.Frame(root)
 player_frame.pack()
 
-# Add play, pause, and stop buttons to the player frame
+# PLAYER BUTTONS
 play_button = tk.Button(player_frame, text="Play", command=lambda: play_selected(selected_song.get(), selected_artist.get()))
 pause_button = tk.Button(player_frame, text="Pause", command=pause_playback)
 stop_button = tk.Button(player_frame, text="Stop", command=stop_playback)
+next_button = tk.Button(player_frame, text="Next", command=play_next_song)
+previous_button = tk.Button(player_frame, text="Previous", command=play_previous_song)
 
 play_button.pack(side=tk.LEFT)
 pause_button.pack(side=tk.LEFT)
 stop_button.pack(side=tk.LEFT)
+next_button.pack(side=tk.LEFT)
+previous_button.pack(side=tk.LEFT)
 
 selected_song = tk.StringVar()
 selected_artist = tk.StringVar()
-#song_duration = tk.IntVar()
 
 
 
